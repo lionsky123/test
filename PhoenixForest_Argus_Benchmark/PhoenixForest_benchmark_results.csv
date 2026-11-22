@@ -1,0 +1,7 @@
+﻿method,run,wall_seconds,board_idle_median_mib,board_observed_peak_mib,board_peak_minus_idle_mib,gpu_samples,gpu_sample_interval_target_s,gpu_model,driver_version,video_width,video_height,video_fps,video_frames,video_bytes
+proposed,proposed-run-1,110.0455,2218,8767,6549,422,0.25,NVIDIA GeForce RTX 5080,610.88,3840,1920,24,96,1678441
+proposed,proposed-run-2,104.3121,2224,8960,6736,397,0.25,NVIDIA GeForce RTX 5080,610.88,3840,1920,24,96,1731277
+proposed,proposed-run-3,110.052,2214,8767,6553,420,0.25,NVIDIA GeForce RTX 5080,610.88,3840,1920,24,96,1753212
+argus,argus-run-3,152.2522,489,15877,15388,599,0.25,NVIDIA GeForce RTX 5080,610.88,3840,1920,24,96,3412410
+argus,argus-run-4,169.0238,514,15832,15318,662,0.25,NVIDIA GeForce RTX 5080,610.88,3840,1920,24,96,3412410
+argus,argus-run-5,156.1753,530,15843,15313,616,0.25,NVIDIA GeForce RTX 5080,610.88,3840,1920,24,96,3412410
