@@ -380,7 +380,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e67d3fad03094c668c3c5403290cdbcd, type: 3}
   m_Name:
   m_EditorClassIdentifier:
-  clip: {fileID: 32900000, guid: f7a5181ff9a847f89c9b378c7e869a91, type: 3}
+  clip: {fileID: 32900000, guid: cb52492ce57e0774296cccc60ceb5a8f, type: 3}
   panoramaShader: {fileID: 4800000, guid: 408885511c14493c814da87460ee7ec4, type: 3}
 --- !u!114 &2098400054
 MonoBehaviour:
