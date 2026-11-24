@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
@@ -9,13 +10,12 @@ using UnityEngine.Video;
 [RequireComponent(typeof(PanoramaVideoPlayer))]
 public sealed class PanoramaVideoMenu : MonoBehaviour
 {
+    [SerializeField] private VideoClip imagine360Clip;
     [SerializeField] private VideoClip argusClip;
     [SerializeField] private Shader controllerRayShader;
 
-    private Button argusButton;
-    private Button xiaButton;
-    private Outline argusHover;
-    private Outline xiaHover;
+    private Button[] buttons;
+    private Outline[] hoverOutlines;
     private GameObject panel;
     private RectTransform panelRect;
     private GameObject eventSystemObject;
@@ -34,27 +34,25 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
         panelRect.SetParent(transform, false);
         panelRect.localPosition = new Vector3(0f, -0.54f, 1.35f);
         panelRect.localScale = Vector3.one * 0.0015f;
-        panelRect.sizeDelta = new Vector2(356f, 72f);
+        panelRect.sizeDelta = new Vector2(648f, 72f);
 
         var canvas = panel.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = camera;
         panel.AddComponent<GraphicRaycaster>();
 
-        argusButton = CreateButton("Argus", -94f, out argusHover);
-        xiaButton = CreateButton("Xia", 94f, out xiaHover);
-        argusButton.onClick.AddListener(() =>
-        {
-            player.Play(argusClip);
-            UpdateSelection(argusButton);
-        });
-        xiaButton.onClick.AddListener(() =>
-        {
-            player.PlayDefault();
-            UpdateSelection(xiaButton);
-        });
+        var imagine360Button = CreateButton("Imagine360", -236f, 176f,
+            () => player.Play(imagine360Clip), out var imagine360Hover);
+        var proposedButton = CreateButton("Proposed workflow", 0f, 256f,
+            player.PlayDefault, out var proposedHover);
+        var argusButton = CreateButton("Argus", 236f, 176f,
+            () => player.Play(argusClip), out var argusHover);
+
+        buttons = new[] { imagine360Button, proposedButton, argusButton };
+        hoverOutlines = new[] { imagine360Hover, proposedHover, argusHover };
+        imagine360Button.interactable = imagine360Clip != null;
         argusButton.interactable = argusClip != null;
-        UpdateSelection(xiaButton);
+        UpdateSelection(proposedButton);
         CreateEventSystem();
 
         rayMaterial = new Material(controllerRayShader);
@@ -64,18 +62,21 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
 
     private void LateUpdate()
     {
-        leftPointer.Update(XRController.leftHand, panelRect, argusButton, xiaButton);
-        rightPointer.Update(XRController.rightHand, panelRect, argusButton, xiaButton);
-        argusHover.enabled = leftPointer.Hovered == argusButton || rightPointer.Hovered == argusButton;
-        xiaHover.enabled = leftPointer.Hovered == xiaButton || rightPointer.Hovered == xiaButton;
+        leftPointer.Update(XRController.leftHand, panelRect, buttons);
+        rightPointer.Update(XRController.rightHand, panelRect, buttons);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var button = buttons[i];
+            hoverOutlines[i].enabled = leftPointer.Hovered == button || rightPointer.Hovered == button;
+        }
     }
 
-    private Button CreateButton(string label, float x, out Outline hoverOutline)
+    private Button CreateButton(string label, float x, float width, UnityAction playVideo, out Outline hoverOutline)
     {
         var root = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
         var rect = (RectTransform)root.transform;
         rect.SetParent(panel.transform, false);
-        rect.sizeDelta = new Vector2(168f, 72f);
+        rect.sizeDelta = new Vector2(width, 72f);
         rect.anchoredPosition = new Vector2(x, 0f);
 
         hoverOutline = root.AddComponent<Outline>();
@@ -86,6 +87,11 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
         var button = root.GetComponent<Button>();
         button.targetGraphic = root.GetComponent<Image>();
         button.navigation = new Navigation { mode = Navigation.Mode.None };
+        button.onClick.AddListener(() =>
+        {
+            playVideo();
+            UpdateSelection(button);
+        });
 
         var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
         var textRect = (RectTransform)textObject.transform;
@@ -107,8 +113,8 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
 
     private void UpdateSelection(Button selected)
     {
-        ApplyButtonColors(argusButton, argusButton == selected);
-        ApplyButtonColors(xiaButton, xiaButton == selected);
+        foreach (var button in buttons)
+            ApplyButtonColors(button, button == selected);
     }
 
     private static void ApplyButtonColors(Button button, bool selected)

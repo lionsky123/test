@@ -41,7 +41,7 @@ internal sealed class PanoramaControllerPointer : IDisposable
         line.enabled = false;
     }
 
-    public void Update(XRController device, RectTransform panel, Button argus, Button xia)
+    public void Update(XRController device, RectTransform panel, Button[] buttons)
     {
         if (controller != device)
             SetController(device);
@@ -55,8 +55,7 @@ internal sealed class PanoramaControllerPointer : IDisposable
             var plane = new Plane(panel.forward, panel.position);
             if (plane.Raycast(ray, out float hitDistance) && hitDistance <= RayLength)
             {
-                var hit = ray.GetPoint(hitDistance);
-                Hovered = HitButton(argus, hit) ? argus : HitButton(xia, hit) ? xia : null;
+                Hovered = FindButton(buttons, ray.GetPoint(hitDistance));
                 distance = Mathf.Max(0f, hitDistance - 0.004f);
             }
 
@@ -117,10 +116,16 @@ internal sealed class PanoramaControllerPointer : IDisposable
         return true;
     }
 
-    private static bool HitButton(Button button, Vector3 hit)
+    private static Button FindButton(Button[] buttons, Vector3 hit)
     {
-        var rect = (RectTransform)button.transform;
-        return button.IsInteractable() && rect.rect.Contains(rect.InverseTransformPoint(hit));
+        foreach (var button in buttons)
+        {
+            var rect = (RectTransform)button.transform;
+            if (button.IsInteractable() && rect.rect.Contains(rect.InverseTransformPoint(hit)))
+                return button;
+        }
+
+        return null;
     }
 
     public void Dispose()

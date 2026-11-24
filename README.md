@@ -1,6 +1,6 @@
 # Phoenix Forest 360
 
-Phoenix Forest 360 is a Unity project for comparing two monoscopic 360° video outputs on Meta Quest 3. Both panoramas were made from the same four-second perspective clip. The app projects each equirectangular video onto the inside of a sphere so you can look around by turning your head.
+Phoenix Forest 360 is a Unity project for comparing three monoscopic 360° versions of the Phoenix Forest scene on Meta Quest 3. The app projects each equirectangular video onto the inside of a sphere so you can look around by turning your head.
 
 ## Build and run on Quest 3
 
@@ -15,20 +15,21 @@ Phoenix Forest 360 is a Unity project for comparing two monoscopic 360° video o
    ```
 
 3. Open the project in Unity Hub. In **File > Build Profiles**, switch to **Android**. The project is configured for OpenXR with Meta Quest support. The startup scene is [`testScene.unity`](Assets/Scenes/testScene.unity).
-4. Connect a Quest 3 with Developer Mode enabled and use **Build and Run**. **Xia** starts playing automatically. Point a Touch controller at a button and squeeze the index trigger when the button outline turns green.
+4. Connect a Quest 3 with Developer Mode enabled and use **Build and Run**. **Proposed workflow** starts playing automatically. Point a Touch controller at a button and squeeze the index trigger when the button outline turns green.
 
 | Button | 360° video |
 | --- | --- |
+| **Imagine360** | [`PhoenixForest_Imagine360_Test.mp4`](Assets/PhoenixForest/PhoenixForest_Imagine360_Test.mp4) |
+| **Proposed workflow** | [`PhoenixForest_Proposed_Test.mp4`](Assets/PhoenixForest/PhoenixForest_Proposed_Test.mp4) |
 | **Argus** | [`PhoenixForest_Argus_Test.mp4`](Assets/PhoenixForest/PhoenixForest_Argus_Test.mp4) |
-| **Xia** | [`PhoenixForest_Proposed_Test.mp4`](Assets/PhoenixForest/PhoenixForest_Proposed_Test.mp4) |
 
-Both clips loop and use a 3840 × 1920 equirectangular frame at 24 fps.
+All three clips loop and use a 3840 × 1920 equirectangular frame at 24 fps.
 
 ## Conversion and benchmark files
 
 - [`PhoenixForest.mp4`](PhoenixForest.mp4) is the original 960 × 540 perspective clip.
 - [`video_to_360.py`](video_to_360.py) converts a perspective video into a monoscopic 360° MP4. It detects shots, preserves the recorded background where possible, uses a local FLUX model to extend the background into a panorama, and composites the segmented foreground back onto each frame.
-- [`PhoenixForest_Argus_Benchmark/`](PhoenixForest_Argus_Benchmark/) contains both delivered panoramas, [per-run results](PhoenixForest_Argus_Benchmark/PhoenixForest_benchmark_results.csv), and [an archive of the benchmark configuration, commands, logs, and GPU traces](PhoenixForest_Argus_Benchmark/PhoenixForest_benchmark_logs.zip). The results report generation time and GPU board memory measured on an NVIDIA GeForce RTX 5080.
+- [`PhoenixForest_Argus_Benchmark/`](PhoenixForest_Argus_Benchmark/) contains the Argus and Proposed workflow panoramas, [per-run results](PhoenixForest_Argus_Benchmark/PhoenixForest_benchmark_results.csv), and [an archive of the benchmark configuration, commands, logs, and GPU traces](PhoenixForest_Argus_Benchmark/PhoenixForest_benchmark_logs.zip). The results report generation time and GPU board memory measured on an NVIDIA GeForce RTX 5080.
 
 ### Run the conversion script
 

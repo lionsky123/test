@@ -394,6 +394,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 902af9faa8ab475db56cf2e38713a1e7, type: 3}
   m_Name:
   m_EditorClassIdentifier:
+  imagine360Clip: {fileID: 32900000, guid: 2bd360fc8ef4eeb45bd70cc178218576, type: 3}
   argusClip: {fileID: 32900000, guid: 9da73b4352f756c4d916d3c58873133c, type: 3}
   controllerRayShader: {fileID: 4800000, guid: 650dd9526735d5b46b79224bc6e94025, type: 3}
 --- !u!1660057539 &9223372036854775807
