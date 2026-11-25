@@ -23,6 +23,10 @@ r"""本地普通视频转单目 360° 全景。
 须预先安装本地 ComfyUI 和 FLUX 全景模型。BLIP 和 U²-Net 缓存后可用 --offline。
 只传视频路径时，输出到用户的 Downloads 文件夹，文件名为 <原文件名>_360.mp4。
 每个镜头保留已拍到的高清背景，由本地模型补全其余全景，再逐帧叠加透明主体。
+默认用 U²-Net 提取前景。固定主体区域的素材可选用框选 SAM ViT-B：
+--sam-box 508 317 825 647 --sam-checkpoint "C:\模型\sam_vit_b_01ec64.pth"
+框坐标以视频正常显示方向的原始像素计，右边界和下边界不包含在框内。
+请在运行脚本的 Python 环境安装 torchvision 和官方 segment-anything。
 """
 
 from __future__ import annotations
@@ -69,6 +73,11 @@ def parse_args():
     parser.add_argument("--fps", type=int, default=24, help="输出帧率，默认 24")
     parser.add_argument("--seed", type=int, default=360, help="生成背景随机种子")
     parser.add_argument("--offline", action="store_true", help="只使用已缓存的模型")
+    parser.add_argument(
+        "--sam-box", type=int, nargs=4, metavar=("X1", "Y1", "X2", "Y2"),
+        help="改用框选 SAM ViT-B 逐帧提取前景，使用原视频像素坐标",
+    )
+    parser.add_argument("--sam-checkpoint", type=Path, help="本地 SAM ViT-B 权重文件")
     args = parser.parse_args()
     if not args.video.is_file():
         parser.error(f"视频文件不存在：{args.video}")
@@ -78,6 +87,15 @@ def parse_args():
         parser.error("--duration 必须大于 0")
     if args.width < 256 or args.width % 4 or not 1 <= args.fps <= 120:
         parser.error("--width 须至少为 256 且为 4 的倍数，--fps 须为 1 至 120")
+    if (args.sam_box is None) != (args.sam_checkpoint is None):
+        parser.error("--sam-box 和 --sam-checkpoint 须同时提供")
+    if args.sam_box is not None:
+        x1, y1, x2, y2 = args.sam_box
+        if not (0 <= x1 < x2 and 0 <= y1 < y2):
+            parser.error("--sam-box 须满足 0 ≤ X1 < X2 且 0 ≤ Y1 < Y2")
+        if not args.sam_checkpoint.is_file():
+            parser.error(f"SAM ViT-B 权重文件不存在：{args.sam_checkpoint}")
+        args.sam_checkpoint = args.sam_checkpoint.resolve()
     args.video = args.video.resolve()
     if args.output is None:
         args.output = Path.home() / "Downloads" / f"{args.video.stem}_360.mp4"
@@ -215,7 +233,7 @@ def collect_shot_samples(stream, indexes):
     raise RuntimeError("无法定位镜头中的高清背景参考帧")
 
 
-def clean_background(frames, foreground):
+def clean_background(frames, foreground, *, matte_for_sample=None):
     """Keep the reference's observed pixels; use the nearest aligned donors for occlusions."""
     reference_index = len(frames) // 2
     reference = frames[reference_index]
@@ -233,7 +251,11 @@ def clean_background(frames, foreground):
     measured = []
     for index in sorted(range(len(frames)), key=lambda i: abs(i - reference_index)):
         frame = frames[index]
-        subject = refine_matte(foreground.mask(frame)) > 0.24
+        if matte_for_sample is None:
+            matte = refine_matte(foreground.mask(frame))
+        else:
+            matte = matte_for_sample(index, frame)
+        subject = matte > 0.24
         available = np.ones((height, width), np.uint8)
         if subject.any():
             x, y, w, h = cv2.boundingRect(subject.astype(np.uint8))
@@ -519,6 +541,67 @@ def refine_matte(estimate):
     return cv2.GaussianBlur(matte, (0, 0), 0.9)
 
 
+def prepare_sam_mattes(args, cache_dir, frame_count):
+    """Compute the boxed foreground mattes before launching panorama inference."""
+    with closing(imageio_ffmpeg.read_frames(
+        str(args.video), output_params=["-map", "0:v:0", "-frames:v", "1"]
+    )) as original:
+        source_width, source_height = next(original)["size"]
+    left, top, right, bottom = args.sam_box
+    if right > source_width or bottom > source_height:
+        raise RuntimeError(f"--sam-box 超出原视频尺寸 {source_width}×{source_height}")
+
+    import torch
+    try:
+        from segment_anything import SamPredictor, sam_model_registry
+    except ImportError as error:
+        raise RuntimeError("SAM 模式需要在当前 Python 环境安装 torchvision 和官方 segment-anything") from error
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"使用 SAM ViT-B 框选提取 {frame_count} 帧前景（{device}）……", flush=True)
+    model = sam_model_registry["vit_b"]()
+    model.load_state_dict(torch.load(args.sam_checkpoint, map_location="cpu", weights_only=True))
+    predictor = SamPredictor(model.to(device).eval())
+    cache_dir.mkdir()
+    written = 0
+    with closing(read_frames(args, 1920)) as frames:
+        for index, frame in enumerate(frames):
+            height, width = frame.shape[:2]
+            x1 = math.floor(left * width / source_width)
+            y1 = math.floor(top * height / source_height)
+            x2 = math.ceil(right * width / source_width)
+            y2 = math.ceil(bottom * height / source_height)
+            padding = max(24, int(0.12 * max(x2 - x1, y2 - y1)))
+            x0, y0 = max(0, x1 - padding), max(0, y1 - padding)
+            xr, yr = min(width, x2 + padding), min(height, y2 + padding)
+            box = np.array([x1 - x0, y1 - y0, x2 - x0 - 1, y2 - y0 - 1])
+            with torch.inference_mode(), torch.autocast(
+                "cuda", dtype=torch.float16, enabled=device == "cuda"
+            ):
+                predictor.set_image(frame[y0:yr, x0:xr])
+                logits, scores, _ = predictor.predict(
+                    box=box, multimask_output=True, return_logits=True
+                )
+            estimate = np.zeros((height, width), np.float32)
+            estimate[y0:yr, x0:xr] = smoothstep((logits[int(np.argmax(scores))] + 2.8) / 5.6)
+            matte = np.rint(refine_matte(estimate) * 255).astype(np.uint8)
+            Image.fromarray(matte).save(cache_dir / f"{index:06d}.png")
+            written += 1
+    del predictor, model
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    if written != frame_count:
+        raise RuntimeError(f"SAM 前景蒙版帧数不符（{written}/{frame_count}）")
+
+
+def read_sam_matte(cache_dir, index, size):
+    with Image.open(cache_dir / f"{index:06d}.png") as image:
+        matte = np.asarray(image, dtype=np.float32) / 255
+    if matte.shape[1::-1] != size:
+        matte = cv2.resize(matte, size, interpolation=cv2.INTER_LINEAR)
+    return matte
+
+
 def feather_seam(image):
     output = image.copy()
     band = max(8, min(48, image.shape[1] // 24))
@@ -636,8 +719,14 @@ class ForestAmbience:
         return cv2.resize(layer, output_size, interpolation=cv2.INTER_LINEAR)
 
 
-def render(args, starts, samples, frame_count, foreground, generator, target):
+def render(args, starts, samples, frame_count, foreground, generator, target, *, sam_mattes=None):
     size = (args.width, args.width // 2)
+
+    def matte_at(index, frame):
+        if sam_mattes is not None:
+            return read_sam_matte(sam_mattes, index, frame.shape[1::-1])
+        return refine_matte(foreground.mask(frame))
+
     command = [
         FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo",
         "-pix_fmt", "rgb24", "-s", f"{size[0]}x{size[1]}", "-r", str(args.fps), "-i", "-",
@@ -665,8 +754,15 @@ def render(args, starts, samples, frame_count, foreground, generator, target):
             for index, original in enumerate(video_frames):
                 if shot < len(starts) and index == starts[shot]:
                     print(f"生成镜头 {shot + 1}/{len(starts)} 的全景背景……", flush=True)
-                    frames = collect_shot_samples(reference_stream, samples[shot])
-                    plate, known = clean_background(frames, foreground)
+                    sample_indices = samples[shot]
+                    frames = collect_shot_samples(reference_stream, sample_indices)
+                    if sam_mattes is None:
+                        plate, known = clean_background(frames, foreground)
+                    else:
+                        plate, known = clean_background(
+                            frames, foreground,
+                            matte_for_sample=lambda slot, frame: matte_at(sample_indices[slot], frame),
+                        )
                     del frames
                     sw, sh = original.shape[1::-1]
                     fov = math.degrees(2 * math.atan(math.tan(math.radians(59)) * min(1.0, sw / sh)))
@@ -682,7 +778,7 @@ def render(args, starts, samples, frame_count, foreground, generator, target):
                     elapsed = (index - shot_start) / args.fps
                     frame = cv2.add(background, ambience.light(elapsed, size))
                 region = projection.region
-                matte = refine_matte(foreground.mask(original))
+                matte = matte_at(index, original)
                 # Project premultiplied foreground to prevent the old 16:9 floor from bleeding into the edges.
                 alpha = projection.sample(matte) * projection.coverage
                 projected = projection.sample(original.astype(np.float32) * matte[..., None])
@@ -710,14 +806,18 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     starts, samples, count = find_shots(args)
-    foreground = ForegroundModel(args.offline)
+    foreground = ForegroundModel(args.offline) if args.sam_box is None else None
     with tempfile.TemporaryDirectory(prefix="video360-", dir=args.output.parent) as temp:
         workspace = Path(temp)
         pending = workspace / "panorama.mp4"
+        sam_mattes = None
+        if args.sam_box is not None:
+            sam_mattes = workspace / "sam-mattes"
+            prepare_sam_mattes(args, sam_mattes, count)
         outpainter = FluxPanorama(workspace)
         try:
             generator = PanoramaGenerator(args.offline, outpainter)
-            render(args, starts, samples, count, foreground, generator, pending)
+            render(args, starts, samples, count, foreground, generator, pending, sam_mattes=sam_mattes)
         finally:
             outpainter.close()
         if args.output.exists():
