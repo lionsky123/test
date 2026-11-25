@@ -9,12 +9,18 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
     [SerializeField] private Shader panoramaShader;
 
     private const float SphereRadius = 32f;
+    private const float ScreenWidth = 2.4f;
+    private const float ScreenHeight = 1.25f;
     private VideoPlayer player;
     private RenderTexture videoTexture;
-    private Material panoramaMaterial;
+    private Material videoMaterial;
     private Mesh panoramaMesh;
     private GameObject panorama;
+    private GameObject flatScreen;
     private bool panoramaAligned;
+    private bool isPanoramic;
+
+    public VideoClip DefaultClip => clip;
 
     private void Awake()
     {
@@ -24,7 +30,9 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
             return;
         }
 
+        videoMaterial = new Material(panoramaShader);
         CreatePanorama();
+        CreateFlatScreen();
 
         player = gameObject.AddComponent<VideoPlayer>();
         player.playOnAwake = false;
@@ -50,6 +58,11 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
 
     public void Play(VideoClip nextClip)
     {
+        Play(nextClip, true);
+    }
+
+    public void Play(VideoClip nextClip, bool panoramic)
+    {
         if (player == null || nextClip == null)
         {
             Debug.LogError("The panorama player needs a video clip and shader.", this);
@@ -58,20 +71,26 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
 
         player.Stop();
         panorama.SetActive(false);
+        flatScreen.SetActive(false);
+        isPanoramic = panoramic;
         if (videoTexture == null || videoTexture.width != nextClip.width || videoTexture.height != nextClip.height)
         {
             ReleaseVideoTexture();
             videoTexture = new RenderTexture((int)nextClip.width, (int)nextClip.height, 0, RenderTextureFormat.ARGB32)
             {
-                name = "Phoenix Forest Video",
-                wrapModeU = TextureWrapMode.Repeat,
+                name = "Clip Video Texture",
                 wrapModeV = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear
             };
             videoTexture.Create();
-            panoramaMaterial.mainTexture = videoTexture;
+            videoMaterial.mainTexture = videoTexture;
             player.targetTexture = videoTexture;
         }
+
+        videoTexture.wrapModeU = isPanoramic ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
+        Graphics.Blit(Texture2D.blackTexture, videoTexture);
+        if (!isPanoramic)
+            PositionFlatScreen(nextClip);
 
         player.clip = nextClip;
         player.Prepare();
@@ -86,13 +105,38 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
         panoramaMesh = CreateInwardSphere(96, 48);
         panorama.AddComponent<MeshFilter>().sharedMesh = panoramaMesh;
 
-        panoramaMaterial = new Material(panoramaShader);
-        var sphereRenderer = panorama.AddComponent<MeshRenderer>();
-        sphereRenderer.sharedMaterial = panoramaMaterial;
-        sphereRenderer.shadowCastingMode = ShadowCastingMode.Off;
-        sphereRenderer.receiveShadows = false;
-        sphereRenderer.lightProbeUsage = LightProbeUsage.Off;
-        sphereRenderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+        ConfigureRenderer(panorama.AddComponent<MeshRenderer>());
+    }
+
+    private void CreateFlatScreen()
+    {
+        flatScreen = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        flatScreen.name = "Original Video Screen";
+        flatScreen.SetActive(false);
+        Destroy(flatScreen.GetComponent<MeshCollider>());
+        ConfigureRenderer(flatScreen.GetComponent<MeshRenderer>());
+    }
+
+    private void ConfigureRenderer(MeshRenderer renderer)
+    {
+        renderer.sharedMaterial = videoMaterial;
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.lightProbeUsage = LightProbeUsage.Off;
+        renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+    }
+
+    private void PositionFlatScreen(VideoClip nextClip)
+    {
+        Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+        Quaternion rotation = forward.sqrMagnitude > 0.01f
+            ? Quaternion.LookRotation(forward)
+            : panorama.transform.rotation;
+        float aspect = (float)nextClip.width / nextClip.height;
+        float height = Mathf.Min(ScreenHeight, ScreenWidth / aspect);
+        flatScreen.transform.SetPositionAndRotation(
+            transform.position + rotation * new Vector3(0f, 0.22f, 2.6f), rotation);
+        flatScreen.transform.localScale = new Vector3(aspect * height, height, 1f);
     }
 
     private void StartPlayback(VideoPlayer preparedPlayer)
@@ -101,7 +145,7 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
             return;
 
         // Align once so switching clips preserves the viewer's direction within the panorama.
-        if (!panoramaAligned)
+        if (isPanoramic && !panoramaAligned)
         {
             var forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
             if (forward.sqrMagnitude > 0.01f)
@@ -109,9 +153,11 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
             panoramaAligned = true;
         }
 
-        panorama.SetActive(true);
+        panorama.SetActive(isPanoramic);
+        flatScreen.SetActive(!isPanoramic);
         preparedPlayer.Play();
-        Debug.Log($"[Phoenix Forest 360] Playing {preparedPlayer.clip.name} at {preparedPlayer.width}x{preparedPlayer.height}.", this);
+        string mode = isPanoramic ? "360°" : "2D";
+        Debug.Log($"[Phoenix Forest 360] Playing {preparedPlayer.clip.name} at {preparedPlayer.width}x{preparedPlayer.height} ({mode}).", this);
     }
 
     private void LateUpdate()
@@ -186,8 +232,9 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
         }
 
         Destroy(panorama);
+        Destroy(flatScreen);
         Destroy(panoramaMesh);
-        Destroy(panoramaMaterial);
+        Destroy(videoMaterial);
         ReleaseVideoTexture();
     }
 
@@ -200,5 +247,6 @@ public sealed class PanoramaVideoPlayer : MonoBehaviour
             player.targetTexture = null;
         videoTexture.Release();
         Destroy(videoTexture);
+        videoTexture = null;
     }
 }

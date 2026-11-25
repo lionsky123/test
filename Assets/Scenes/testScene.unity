@@ -394,8 +394,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 902af9faa8ab475db56cf2e38713a1e7, type: 3}
   m_Name:
   m_EditorClassIdentifier:
+  phoenixForestSourceClip: {fileID: 32900000, guid: d7f0dc6b391896d4f8efb6ec315d380b, type: 3}
   imagine360Clip: {fileID: 32900000, guid: 2bd360fc8ef4eeb45bd70cc178218576, type: 3}
   argusClip: {fileID: 32900000, guid: 9da73b4352f756c4d916d3c58873133c, type: 3}
+  pigWatermelonSourceClip: {fileID: 32900000, guid: 14e6c60c1bd9648429f3c4231795c279, type: 3}
+  pigWatermelonImagine360Clip: {fileID: 32900000, guid: 76c24c524964cb443bd1024eadee171c, type: 3}
+  pigWatermelonProposedClip: {fileID: 32900000, guid: 2e9564c7983ae2245a2e895286071783, type: 3}
+  pigWatermelonArgusClip: {fileID: 32900000, guid: 7aa3619e7cc239049a0187029dc8f260, type: 3}
   controllerRayShader: {fileID: 4800000, guid: 650dd9526735d5b46b79224bc6e94025, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:

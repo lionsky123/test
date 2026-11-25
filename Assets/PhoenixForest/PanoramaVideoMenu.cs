@@ -10,9 +10,17 @@ using UnityEngine.Video;
 [RequireComponent(typeof(PanoramaVideoPlayer))]
 public sealed class PanoramaVideoMenu : MonoBehaviour
 {
+    [SerializeField] private VideoClip phoenixForestSourceClip;
     [SerializeField] private VideoClip imagine360Clip;
     [SerializeField] private VideoClip argusClip;
+    [SerializeField] private VideoClip pigWatermelonSourceClip;
+    [SerializeField] private VideoClip pigWatermelonImagine360Clip;
+    [SerializeField] private VideoClip pigWatermelonProposedClip;
+    [SerializeField] private VideoClip pigWatermelonArgusClip;
     [SerializeField] private Shader controllerRayShader;
+
+    private static readonly string[] ButtonLabels = { "Original (2D)", "Imagine360", "Proposed workflow", "Argus" };
+    private static readonly float[] ButtonWidths = { 154f, 170f, 236f, 126f };
 
     private Button[] buttons;
     private Outline[] hoverOutlines;
@@ -24,6 +32,7 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
     private Material rayMaterial;
     private PanoramaControllerPointer leftPointer;
     private PanoramaControllerPointer rightPointer;
+    private Font font;
 
     private void Start()
     {
@@ -32,27 +41,27 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
         panel = new GameObject("Video selection", typeof(RectTransform), typeof(Canvas));
         panelRect = (RectTransform)panel.transform;
         panelRect.SetParent(transform, false);
-        panelRect.localPosition = new Vector3(0f, -0.54f, 1.35f);
+        panelRect.localPosition = new Vector3(0f, -0.55f, 1.5f);
         panelRect.localScale = Vector3.one * 0.0015f;
-        panelRect.sizeDelta = new Vector2(648f, 72f);
+        panelRect.sizeDelta = new Vector2(752f, 222f);
 
         var canvas = panel.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = camera;
         panel.AddComponent<GraphicRaycaster>();
 
-        var imagine360Button = CreateButton("Imagine360", -236f, 176f,
-            () => player.Play(imagine360Clip), out var imagine360Hover);
-        var proposedButton = CreateButton("Proposed workflow", 0f, 256f,
-            player.PlayDefault, out var proposedHover);
-        var argusButton = CreateButton("Argus", 236f, 176f,
-            () => player.Play(argusClip), out var argusHover);
+        var background = panel.AddComponent<Image>();
+        background.color = new Color32(13, 22, 29, 225);
+        background.raycastTarget = false;
+        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        buttons = new[] { imagine360Button, proposedButton, argusButton };
-        hoverOutlines = new[] { imagine360Hover, proposedHover, argusHover };
-        imagine360Button.interactable = imagine360Clip != null;
-        argusButton.interactable = argusClip != null;
-        UpdateSelection(proposedButton);
+        buttons = new Button[2 * ButtonLabels.Length];
+        hoverOutlines = new Outline[buttons.Length];
+        CreateGroup("PhoenixForest", 52f, 0, player,
+            new[] { phoenixForestSourceClip, imagine360Clip, player.DefaultClip, argusClip });
+        CreateGroup("PigWatermelon", -52f, ButtonLabels.Length, player,
+            new[] { pigWatermelonSourceClip, pigWatermelonImagine360Clip, pigWatermelonProposedClip, pigWatermelonArgusClip });
+        UpdateSelection(player.DefaultClip != null ? buttons[2] : null);
         CreateEventSystem();
 
         rayMaterial = new Material(controllerRayShader);
@@ -71,13 +80,36 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
         }
     }
 
-    private Button CreateButton(string label, float x, float width, UnityAction playVideo, out Outline hoverOutline)
+    private void CreateGroup(string title, float rowY, int firstIndex, PanoramaVideoPlayer player, VideoClip[] clips)
     {
-        var root = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
+        var heading = CreateLabel(panelRect, title, 24, TextAnchor.MiddleLeft);
+        heading.rectTransform.anchoredPosition = new Vector2(0f, rowY + 34f);
+        heading.rectTransform.sizeDelta = new Vector2(722f, 30f);
+
+        float left = -361f;
+        for (int column = 0; column < clips.Length; column++)
+        {
+            VideoClip video = clips[column];
+            bool panoramic = column != 0;
+            int index = firstIndex + column;
+            float width = ButtonWidths[column];
+            string label = ButtonLabels[column];
+            buttons[index] = CreateButton($"{title} - {label}", label,
+                new Vector2(left + width / 2f, rowY - 13f), width,
+                () => player.Play(video, panoramic), out hoverOutlines[index]);
+            buttons[index].interactable = video != null;
+            left += width + 12f;
+        }
+    }
+
+    private Button CreateButton(string name, string label, Vector2 position, float width, UnityAction playVideo,
+        out Outline hoverOutline)
+    {
+        var root = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
         var rect = (RectTransform)root.transform;
         rect.SetParent(panel.transform, false);
-        rect.sizeDelta = new Vector2(width, 72f);
-        rect.anchoredPosition = new Vector2(x, 0f);
+        rect.sizeDelta = new Vector2(width, 64f);
+        rect.anchoredPosition = position;
 
         hoverOutline = root.AddComponent<Outline>();
         hoverOutline.effectColor = new Color32(107, 255, 193, 255);
@@ -93,22 +125,26 @@ public sealed class PanoramaVideoMenu : MonoBehaviour
             UpdateSelection(button);
         });
 
-        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
-        var textRect = (RectTransform)textObject.transform;
-        textRect.SetParent(rect, false);
+        var textRect = CreateLabel(rect, label, 24, TextAnchor.MiddleCenter).rectTransform;
         textRect.anchorMin = Vector2.zero;
         textRect.anchorMax = Vector2.one;
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
-
-        var text = textObject.GetComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.text = label;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.fontSize = 26;
-        text.fontStyle = FontStyle.Bold;
-        text.raycastTarget = false;
         return button;
+    }
+
+    private Text CreateLabel(RectTransform parent, string label, int size, TextAnchor alignment)
+    {
+        var text = new GameObject("Label", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+        text.rectTransform.SetParent(parent, false);
+        text.font = font;
+        text.text = label;
+        text.alignment = alignment;
+        text.fontSize = size;
+        text.fontStyle = FontStyle.Bold;
+        text.color = Color.white;
+        text.raycastTarget = false;
+        return text;
     }
 
     private void UpdateSelection(Button selected)
